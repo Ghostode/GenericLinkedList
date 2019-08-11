@@ -17,6 +17,7 @@
 /***************************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include "linkedlist.h"
 
 /***************************************************************************/
@@ -31,8 +32,22 @@ typedef struct node{
 struct link{
     Node *head;
     int length;
+    pthread_rwlock_t lock;
 };
 
+/*********************************************************************/
+/*                           LOCAL PROTOTYPES                        */
+/*********************************************************************/
+static void list_init(Link *list);
+static Node * node_create(void* data);
+static Node* list_get(Link *list, int index);
+static int partition(Link *list, int low, int high, int (*compare)(void *, void *));
+static void quick_sort(Link *list, int low, int high, int (*compare)(void *, void *));
+static void initLock(pthread_rwlock_t *rwlock);
+static void rdLock(pthread_rwlock_t *rwlock);
+static void wrLock(pthread_rwlock_t *rwlock);
+static void unLock(pthread_rwlock_t *rwlock);
+static void delLock(pthread_rwlock_t *rwlock);
 
 /***************************************************************************/
 /*LOCAL_FUNCTIONS                                                                   */
@@ -50,10 +65,19 @@ struct link{
 */
 static void list_init(Link *list){
     list->head = NULL;
-
     list->length=0;
+    initLock(&(list->lock));
 };
 
+static Node * node_create(void* data){
+    Node *node = malloc(sizeof(Node));
+    if(NULL != node){
+        node->prior = NULL;
+        node->next = NULL;
+        node->data = data;
+    }
+    return node;
+}
 /*!
 *\fn           static Node* list_get(Link *list, int index)
 *
@@ -66,9 +90,10 @@ static void list_init(Link *list){
 *
 */
 static Node* list_get(Link *list, int index){
+    if(list == NULL) return NULL;
     int  i;
     Node *tmp = list->head;
-    for(i=1; i<index; i++){
+    for(i=1; i<index && tmp != NULL; i++){
         tmp=tmp->next;
     }
     return tmp;
@@ -107,8 +132,45 @@ static void quick_sort(Link *list, int low, int high, int (*compare)(void *, voi
     }
 }
 
+static void initLock(pthread_rwlock_t *rwlock)
+{
+	int res = 0;
+	res = pthread_rwlock_init(rwlock, NULL);
+	if(0 != res)
+	{
+		printf("INIT LOCK FAILURE\n");
+        exit(0);
+	}
+}
 
+static void rdLock(pthread_rwlock_t *rwlock)
+{
+	
+	pthread_rwlock_rdlock(rwlock);
+	
+}
 
+static void wrLock(pthread_rwlock_t *rwlock)
+{
+	pthread_rwlock_wrlock(rwlock);
+}
+
+static void unLock(pthread_rwlock_t *rwlock)
+{
+	pthread_rwlock_unlock(rwlock);
+}
+
+static void delLock(pthread_rwlock_t *rwlock)
+{
+	int res = 0;
+	res = pthread_rwlock_destroy(rwlock);
+	if(0 != res)
+	{
+		printf("%d ",res);
+		printf("DESTORY LOCK FAILURE\n");
+        exit(0);
+	}
+}
 /***************************************************************************/
 /*PUBLIC_FUNCTIONS                                                                  */
 /***************************************************************************/
@@ -140,17 +202,20 @@ void list_destroy(Link *list){
     if(list == NULL) return;
     Node *cur = NULL;
     Node *next = NULL;
+    wrLock(&(list->lock));
         for (cur = list->head; cur != NULL; cur = next)
         {
             next = cur->next;
             cur->next=NULL;
             cur->prior=NULL;
             free(cur);
-
         }
      list->length=0;
      list->head=NULL;
+     unLock(&(list->lock));
+     delLock(&(list->lock));
      free(list);
+     list = NULL;
 
 }
 
@@ -166,7 +231,9 @@ void list_destroy(Link *list){
 */
 void list_sort(Link *list, int (*compare)(void *, void *)){
     if(list == NULL) return;
+    wrLock(&(list->lock));
     quick_sort(list, 1, list->length, compare);
+    unLock(&(list->lock));
 }
 
 /*!
@@ -182,13 +249,17 @@ void list_sort(Link *list, int (*compare)(void *, void *)){
 */
 int list_search(Link *list, void *data, int (*equal)(void *, void *)){
     if(NULL == list)  {printf("empty list!\n"); return 0;}
-
+    rdLock(&(list->lock));
     Node *tmp = list->head;
     int i;
     for(i=1; i<=list->length; i++){
-        if(1 == equal(data, tmp->data)) return i;
+        if(1 == equal(data, tmp->data)){
+            unLock(&(list->lock));
+            return i;
+        }
         tmp = tmp->next;
     }
+    unLock(&(list->lock));
     return 0;
 }
 
@@ -205,12 +276,14 @@ void list_print(Link *list, void (*print)(void* )){
     if(list == NULL) {printf("empty list!\n"); return ;}
 
     Node *tmp = list->head;
+    rdLock(&(list->lock));
     while(tmp != NULL){
         //printf("222\n");
         (*print)(tmp->data);
         //printf("1111\n");
         tmp = tmp->next;
     }
+    unLock(&(list->lock));
 }
 
 /*!
@@ -223,13 +296,9 @@ void list_print(Link *list, void (*print)(void* )){
 *\param[in]    pos         The position you want to insert at.
 */
 void list_insert(Link *list, void *data, int pos){
-    Node *node = malloc(sizeof(Node));
-    if(NULL != node){
-        node->prior = NULL;
-        node->next = NULL;
-        node->data = data;
-    }
+    Node *node = node_create(data);
     Node *tmp = list->head; //链表为空则为头结点
+    wrLock(&(list->lock));
     if(tmp == NULL){
         list->head = node;
         list->length++;
@@ -263,6 +332,7 @@ void list_insert(Link *list, void *data, int pos){
         node->next = tmp;
         list->length++;
     }
+    unLock(&(list->lock));
 }
 
 /*!
@@ -276,6 +346,11 @@ void list_insert(Link *list, void *data, int pos){
 *\return
 */
 int list_delete(Link *list, int pos){
+    if(pos == 1 || pos >= list_length(list)) {
+        printf("ILLEGAL NODE POSITION!\n");
+        exit(0);
+    }
+    wrLock(&(list->lock));
     Node *p =list_get(list, pos);
     Node *q;
     if(p!=NULL)
@@ -290,6 +365,7 @@ int list_delete(Link *list, int pos){
         list->length--;
         return 0;
     }
+    unLock(&(list->lock));
     return -1;
 }
 
@@ -305,7 +381,11 @@ int list_delete(Link *list, int pos){
 */
 int list_length(Link* list){
     if(list == NULL) return 0;
-    return list->length;
+    int length = 0;
+    rdLock(&(list->lock));
+    length = list->length;
+    unLock(&(list->lock));
+    return length;
 }
 
 /*!
@@ -319,13 +399,17 @@ int list_length(Link* list){
 *\return       the merged linked list.
 */
 Link* list_merge(Link* list1, Link* list2){
-    if(list1 == NULL||list2 == NULL) return;
+    if(list1 == NULL||list2 == NULL) return NULL;
+    wrLock(&(list1->lock));
+    rdLock(&(list2->lock));
     Node *tmp = list1->head;
     while(tmp->next){
         tmp = tmp->next;
     }
     tmp->next = list2->head;
     list2->head->prior = tmp;
-    list1->length = list1->length+list2->length;
+    list1->length = list1->length + list2->length;
+    unLock(&(list1->lock));
+    unLock(&(list2->lock));
     return list1;
 }

@@ -4,16 +4,6 @@
 #include <arpa/inet.h>
 #include "linkedlist.h"
 #define MAXNAME 41
-typedef struct node{
-    Node *prior;
-    Node *next;
-    void *data;
-}Node;
-
-struct link{
-    Node *head;
-    int length;
-};
 
 typedef struct employee{
     unsigned int number;
@@ -125,11 +115,9 @@ int main(void){
 
     list_sort(mergedlist, less_ip);             //ip升序排序
     printf("\nAfter sorting by ascending IP address:\n");
-    list_print(softlist, print_stuff);
+    list_print(mergedlist, print_stuff);
 
-    list_destroy(softlist);  //销毁链表
-    list_destroy(hardlist);
-    softlist = NULL;
-    hardlist = NULL;
+    list_destroy(mergedlist);  //销毁链表
+    
     return 0;
 }

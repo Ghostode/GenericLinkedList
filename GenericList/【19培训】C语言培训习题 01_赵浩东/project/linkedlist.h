@@ -14,6 +14,9 @@
 #ifndef _LINKEDLIST_H
 #define _LINKEDLIST_H
 
+#ifdef _cplusplus
+extern 'C'{
+#endif
 /***************************************************************************/
 /*TYPES                                                                             */
 /***************************************************************************/
@@ -35,6 +38,11 @@ void list_insert(Link *list, void *data, int pos); //插入节点
 int list_delete(Link *list, int pos); //删除节点
 int list_length(Link* list); //获取长度
 Link* list_merge(Link* list1, Link* list2); //合并链表
+
+#ifdef _cplusplus
+}
+#endif
+
 #endif
 
 
